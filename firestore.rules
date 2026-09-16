@@ -1,0 +1,266 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // ---------------------------------------------------------------------
+    // Dashboard administrators & roles
+    //
+    // The web console (web-admin/) signs in with email + password against
+    // this same project and is authorised by the presence of an
+    // admins/{uid} document. Mobile users authenticate by phone and never
+    // have one, so an app account cannot read another user's data even if it
+    // reaches the console.
+    //
+    // Each admins/{uid} document points at a roles/{roleId} document that
+    // carries the actual permission set (dashboard / users / support /
+    // administration). This is enforced here, not just hidden in the UI —
+    // a Support-only account that opened dev tools and queried Firestore
+    // directly would otherwise still get everyone's data.
+    // ---------------------------------------------------------------------
+    function isAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function myRoleId() {
+      return isAdmin()
+        ? get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.roleId
+        : null;
+    }
+
+    function roleHasPermission(roleId, permission) {
+      return roleId != null
+        && exists(/databases/$(database)/documents/roles/$(roleId))
+        && permission in get(/databases/$(database)/documents/roles/$(roleId)).data.permissions;
+    }
+
+    function hasPermission(permission) {
+      return isAdmin() && roleHasPermission(myRoleId(), permission);
+    }
+
+    // One-time bootstrap. True only until the very first role document is
+    // written, which lets the sole existing administrator seed the roles
+    // collection and backfill their own roleId once, with no one having to
+    // hand-edit Firestore. It closes itself forever the instant
+    // roles/super_admin exists — there is no manual revert step.
+    function rolesNotYetSeeded() {
+      return !exists(/databases/$(database)/documents/roles/super_admin);
+    }
+
+    match /roles/{roleId} {
+      allow read: if isAdmin();
+      allow write: if hasPermission('administration')
+        || (isAdmin() && rolesNotYetSeeded());
+    }
+
+    match /admins/{uid} {
+      allow get: if isOwner(uid) || hasPermission('administration');
+      allow list: if hasPermission('administration');
+
+      // Creating or removing an administrator is an 'administration' action,
+      // and never on your own record — that stops a super admin from
+      // locking themselves out by accident and stops anyone touching their
+      // own role through this path.
+      allow create: if hasPermission('administration') && uid != request.auth.uid;
+      allow delete: if hasPermission('administration') && uid != request.auth.uid;
+
+      allow update: if (hasPermission('administration') && uid != request.auth.uid)
+        // Any signed-in administrator may edit their own profile (name,
+        // photo) but never their own role or email through this path.
+        || (
+          isOwner(uid)
+          && request.resource.data.roleId == resource.data.roleId
+          && request.resource.data.email == resource.data.email
+        )
+        // One-time roleId backfill for the pre-existing admin doc.
+        || (isOwner(uid) && rolesNotYetSeeded());
+    }
+
+    match /users/{uid} {
+      allow read, write: if isOwner(uid);
+
+      // The Dashboard reads users for its totals and recent-activity list;
+      // the Users tab reads the same collection and additionally edits the
+      // fields it owns (plan, isBlocked, note) plus profile corrections. A
+      // Support-only account has neither permission and gets nothing here.
+      allow read: if hasPermission('users') || hasPermission('dashboard');
+      allow update: if hasPermission('users');
+
+      match /contacts/{contactId} {
+        allow read, write: if isOwner(uid);
+        allow read: if hasPermission('users') || hasPermission('dashboard');
+        allow update: if hasPermission('users');
+
+        match /timeline/{timelineId} {
+          allow read, write: if isOwner(uid);
+          allow read: if hasPermission('users') || hasPermission('dashboard');
+        }
+
+        // Multi-note support (ContactRepository writes here). This block was
+        // missing, so every note write fell through to the closing deny —
+        // notes could not be saved at all.
+        match /notes/{noteId} {
+          allow read, write: if isOwner(uid);
+          allow read: if hasPermission('users') || hasPermission('dashboard');
+        }
+      }
+
+      match /notifications/{notificationId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      match /call_logs/{callLogId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      // VoIP push registrations (FCM token + PushKit VoIP token). Private to
+      // the owner; Cloud Functions read them with admin privileges.
+      match /devices/{deviceId} {
+        allow read, write: if isOwner(uid);
+      }
+    }
+
+    // ---------------------------------------------------------------------
+    // Collection-group reads
+    //
+    // A collectionGroup() query is matched against these wildcard paths, not
+    // against the nested blocks above, so the dashboard's cross-user totals
+    // and its Recent Contacts table need their own admin-only rules. Owners
+    // keep reaching their own rows through the /users/{uid} tree.
+    // ---------------------------------------------------------------------
+    match /{path=**}/contacts/{contactId} {
+      allow read: if hasPermission('users') || hasPermission('dashboard');
+    }
+
+    match /{path=**}/notes/{noteId} {
+      allow read: if hasPermission('users') || hasPermission('dashboard');
+    }
+
+    match /support_tickets/{ticketId} {
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow read: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow delete: if false;
+
+      // The console works the inbox: it reads every ticket and moves it
+      // between pending / waiting / completed. The submitter's own fields
+      // stay frozen so a status change can never rewrite their report.
+      allow read: if hasPermission('support');
+      allow update: if hasPermission('support')
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.name == resource.data.name
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.subject == resource.data.subject
+        && request.resource.data.message == resource.data.message
+        && request.resource.data.createdAt == resource.data.createdAt;
+
+      // Reply thread. The user's opening message lives on the ticket itself;
+      // everything after it is one document here. Messages are append-only —
+      // neither side can rewrite or erase what was said.
+      match /messages/{messageId} {
+        function ticket() {
+          return get(/databases/$(database)/documents/support_tickets/$(ticketId)).data;
+        }
+
+        allow read: if hasPermission('support') || (isSignedIn() && ticket().uid == request.auth.uid);
+
+        allow create: if request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 4000
+          && (
+            (hasPermission('support') && request.resource.data.from == 'admin')
+            || (
+              isSignedIn()
+              && ticket().uid == request.auth.uid
+              && request.resource.data.from == 'user'
+            )
+          );
+
+        allow update, delete: if false;
+      }
+    }
+
+    // ---------------------------------------------------------------------
+    // VoIP calls
+    // ---------------------------------------------------------------------
+    match /calls/{callId} {
+      function callData() {
+        return get(/databases/$(database)/documents/calls/$(callId)).data;
+      }
+
+      function isCallParticipant() {
+        return isSignedIn() && request.auth.uid in callData().participants;
+      }
+
+      function isCaller() {
+        return isSignedIn() && request.auth.uid == callData().callerId;
+      }
+
+      function isReceiver() {
+        return isSignedIn() && request.auth.uid == callData().receiverId;
+      }
+
+      function immutableFieldsUnchanged() {
+        return request.resource.data.callId == resource.data.callId
+          && request.resource.data.callerId == resource.data.callerId
+          && request.resource.data.receiverId == resource.data.receiverId
+          && request.resource.data.participants == resource.data.participants
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.type == resource.data.type;
+      }
+
+      allow read: if isSignedIn() && request.auth.uid in resource.data.participants;
+
+      allow create: if isSignedIn()
+        && request.resource.data.callerId == request.auth.uid
+        && request.resource.data.participants == [
+             request.resource.data.callerId,
+             request.resource.data.receiverId
+           ]
+        && request.resource.data.status == 'initiating'
+        && request.resource.data.callerId != request.resource.data.receiverId;
+
+      allow update: if isSignedIn()
+        && request.auth.uid in resource.data.participants
+        && immutableFieldsUnchanged();
+
+      allow delete: if false;
+
+      // SDP offer/answer. Both participants read; only the caller writes the
+      // offer and only the receiver writes the answer.
+      match /signaling/{signalId} {
+        allow read: if isCallParticipant();
+        allow write: if (signalId == 'offer' && isCaller())
+          || (signalId == 'answer' && isReceiver());
+      }
+
+      // ICE candidates. Each side writes only its own collection; both read all.
+      match /callerCandidates/{candidateId} {
+        allow read: if isCallParticipant();
+        allow write: if isCaller();
+      }
+
+      match /receiverCandidates/{candidateId} {
+        allow read: if isCallParticipant();
+        allow write: if isReceiver();
+      }
+    }
+
+    // Reverse phone lookup index. Maintained exclusively by the onUserWritten
+    // Cloud Function; clients resolve numbers via the resolveVoipUsers callable.
+    match /phone_index/{phone} {
+      allow read, write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>Metadata</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>metadata</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(FLUTTER_BUILD_NAME)</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleVersion</key>
+	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>NSContactsUsageDescription</key>
+	<string>This app needs access to your contacts to show your phone contacts inside the Contact tab.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app needs access to your photo library to let you pick a profile image for your new contact.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>This app needs your location to capture and show the current context for the contact.</string>
+	<!-- The `location` plugin's native code references the "Always"
+	     authorization API even though this app only ever calls
+	     requestPermission() for when-in-use access (see
+	     permission_prompt_flow.dart) — App Store Connect's static binary
+	     scan flags the key as required regardless of which path is
+	     actually exercised at runtime. -->
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>This app needs your location to capture and show the current context for the contact.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>This app needs camera access to let you take a photo for your contact.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>This app needs microphone access so you can talk during in-app voice calls.</string>
+	<!-- Required for Flutter's debugger/hot-reload to discover the Dart VM
+	     Service over mDNS on a physical device — without these, `flutter run`
+	     installs and launches the app fine but hangs forever waiting for the
+	     VM service, since iOS silently blocks the Bonjour broadcast it needs. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>This app uses the local network to enable debugging and hot reload during development.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_dartobservatory._tcp</string>
+	</array>
+	<!-- voip: lets PushKit wake the app to present an incoming call while it is
+	     backgrounded or terminated. audio: keeps the call's audio session
+	     running once the user leaves the app. Both are required for in-app
+	     VoIP calling and neither places a cellular call. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+		<string>voip</string>
+		<string>audio</string>
+	</array>
+	<!-- url_launcher's canLaunchUrl() is backed by UIApplication.canOpenURL,
+	     which iOS answers only for schemes declared here. DialerService treats a
+	     false answer as "cannot call" and returns without dialling, so an
+	     undeclared scheme turns every outgoing call into a silent no-op. The
+	     Android manifest already declares the matching tel/DIAL intent in its
+	     <queries> block; this is the iOS half of that pair. -->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>tel</string>
+	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+			</array>
+		</dict>
+		<!-- FirebaseAuth's PhoneAuthProvider needs this reversed GOOGLE_APP_ID
+		     scheme registered so the reCAPTCHA/SMS-verification callback can
+		     round-trip back into the app; without it, verifyPhoneNumber()
+		     crashes with a fatalError on iOS (Android has no such requirement).
+		     Value is GoogleService-Info.plist's GOOGLE_APP_ID
+		     (1:823490823169:ios:aa644c81d3c6517b10ac00) reversed. -->
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>app-1-823490823169-ios-aa644c81d3c6517b10ac00</string>
+			</array>
+		</dict>
+	</array>
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
+	<key>UIMainStoryboardFile</key>
+	<string>Main</string>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+</dict>
+</plist>

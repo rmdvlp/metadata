@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-surface-page font-sans text-[13px] text-ink antialiased;
+  }
+
+  /* The design's inputs and buttons never show a browser focus ring, but a
+     keyboard user still needs one. :focus-visible gives it to them only. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand-500/40 ring-offset-1 ring-offset-white;
+  }
+}
+
+@layer components {
+  /* Slim scrollbar used by the ticket list and the horizontally scrolling
+     tables, so an overflowing panel reads as scrollable without a chunky bar. */
+  .scroll-slim {
+    scrollbar-width: thin;
+    scrollbar-color: #DCE1E7 transparent;
+  }
+
+  .scroll-slim::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scroll-slim::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scroll-slim::-webkit-scrollbar-thumb {
+    background-color: #DCE1E7;
+    border-radius: 9999px;
+  }
+}

@@ -1,0 +1,68 @@
+# Define a global platform for your project.
+platform :ios, '15.0'
+
+# CocoaPods analytics sends network stats synchronously affecting flutter build latency.
+ENV['COCOAPODS_DISABLE_STATS'] = 'true'
+
+project 'Runner', {
+  'Debug' => :debug,
+  'Profile' => :release,
+  'Release' => :release,
+}
+
+def flutter_root
+  generated_xcode_build_settings_path = File.expand_path(File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__)
+  unless File.exist?(generated_xcode_build_settings_path)
+    raise "#{generated_xcode_build_settings_path} must exist. If you're running pod install manually, make sure flutter pub get is executed first"
+  end
+
+  File.foreach(generated_xcode_build_settings_path) do |line|
+    matches = line.match(/FLUTTER_ROOT\=(.*)/)
+    return matches[1].strip if matches
+  end
+  raise "FLUTTER_ROOT not found in #{generated_xcode_build_settings_path}. Try deleting Generated.xcconfig, then run flutter pub get"
+end
+
+require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'), flutter_root)
+
+flutter_ios_podfile_setup
+
+target 'Runner' do
+  use_frameworks!
+
+  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+  target 'RunnerTests' do
+    inherit! :search_paths
+  end
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    flutter_additional_ios_build_settings(target)
+
+    # permission_handler compiles each permission in or out with a macro, and
+    # every one of them defaults to 0 (see PermissionHandlerEnums.h). Without
+    # this, Permission.microphone never prompts and always reports denied, so
+    # in-app calls could never get audio on iOS.
+    #
+    # Only the permissions this app actually requests are enabled — anything
+    # left at 0 keeps its code out of the binary, which is also what keeps App
+    # Review from asking why an unused permission is present.
+    target.build_configurations.each do |config|
+      existing = config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] || ['$(inherited)']
+      existing = [existing] if existing.is_a?(String)
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] = existing + [
+        'PERMISSION_MICROPHONE=1',
+        'PERMISSION_NOTIFICATIONS=1',
+      ]
+
+      # abseil's own headers (pulled in via Firestore/gRPC) use quoted includes
+      # like "absl/time/internal/cctz/include/cctz/time_zone.h" that resolve
+      # fine as a static lib but trip Clang's modular-include check once
+      # use_frameworks! builds abseil as a framework module — without this,
+      # archiving fails with "file not found" on those internal headers even
+      # though the same code builds fine for `flutter run`.
+      config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+    end
+  end
+end

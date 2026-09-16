@@ -1,0 +1,145 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Incoming-call detection: READ_PHONE_STATE drives ringing/idle state
+         observation, ANSWER_PHONE_CALLS lets acceptRingingCall() answer a
+         ringing call, USE_FULL_SCREEN_INTENT surfaces the incoming-call UI
+         over the lock screen. CALL_PHONE lets outgoing calls be placed
+         directly via ACTION_CALL instead of just opening the dialer
+         pre-filled via ACTION_DIAL (which needs an extra manual tap).
+         None of these require default-dialer status.
+         See the plan for why ROLE_DIALER/ConnectionService was rejected. -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- Lets CallUiLauncher re-front the app's own task once a call starts, so
+         answering or dialing from this app doesn't leave the user stranded on
+         the system in-call screen with the in-app call screen behind it.
+         Normal (install-time) permission, and it can only reorder tasks
+         belonging to this app. -->
+    <uses-permission android:name="android.permission.REORDER_TASKS" />
+
+    <!-- In-app VoIP (WebRTC). Entirely separate from the telephony
+         permissions above: none of these can place a carrier call, and the
+         audio never leaves the app's own peer connection.
+         RECORD_AUDIO/MODIFY_AUDIO_SETTINGS are the microphone and the
+         earpiece/speaker route. The FOREGROUND_SERVICE pair keeps a call
+         alive once the user leaves the app — Android 11+ revokes microphone
+         access from a backgrounded process without a microphone-typed
+         foreground service, which would kill the call mid-sentence.
+         BLUETOOTH_CONNECT lets audio route to a paired headset on API 31+. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <application
+        android:label="metadata"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher">
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@mipmap/ic_launcher" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="high_importance_channel" />
+        <service
+            android:name=".CallScreeningServiceImpl"
+            android:permission="android.permission.BIND_SCREENING_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.telecom.CallScreeningService" />
+            </intent-filter>
+        </service>
+        <!-- In-app VoIP.
+
+             VoipMessagingService extends the firebase_messaging plugin's own
+             FirebaseMessagingService so token refresh and every non-call
+             message keep working exactly as before; it only adds the native
+             incoming-call path. The plugin's own declaration is removed so
+             FCM has one unambiguous service to dispatch to — without that,
+             which of the two services receives a message is decided by
+             manifest merge order rather than by us.
+
+             The plugin's separate FlutterFirebaseMessagingReceiver is left
+             untouched and still drives all Dart-side message delivery. -->
+        <service
+            android:name=".VoipMessagingService"
+            android:exported="false"
+            android:directBootAware="true">
+            <intent-filter android:priority="1">
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+        <service
+            android:name="io.flutter.plugins.firebase.messaging.FlutterFirebaseMessagingService"
+            tools:node="remove" />
+
+        <service
+            android:name=".VoipCallForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <receiver
+            android:name=".VoipCallActionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="za.co.contextidentity.metadata.VOIP_ANSWER" />
+                <action android:name="za.co.contextidentity.metadata.VOIP_DECLINE" />
+            </intent-filter>
+        </receiver>
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <!-- Specifies an Android theme to apply to this Activity as soon as
+                 the Android process has started. This theme is visible to the user
+                 while the Flutter UI initializes. After that, this theme continues
+                 to determine the Window background behind the Flutter UI. -->
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <!-- Don't delete the meta-data below.
+             This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
+    <!-- Required to query activities that can process text, see:
+         https://developer.android.com/training/package-visibility and
+         https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
+
+         In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT"/>
+            <data android:mimeType="text/plain"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.DIAL"/>
+            <data android:scheme="tel"/>
+        </intent>
+    </queries>
+</manifest>
